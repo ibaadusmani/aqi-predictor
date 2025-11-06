@@ -1,0 +1,83 @@
+================================================================================
+AQI PREDICTOR - MODEL REGISTRY
+================================================================================
+
+Registry Generated: 2025-11-06 17:17:10
+
+--------------------------------------------------------------------------------
+MODEL INFORMATION
+--------------------------------------------------------------------------------
+Model Type: RandomForestRegressor
+Model Parameters:
+  - bootstrap: True
+  - ccp_alpha: 0.0
+  - criterion: squared_error
+  - max_depth: 15
+  - max_features: 1.0
+  - max_leaf_nodes: None
+  - max_samples: None
+  - min_impurity_decrease: 0.0
+  - min_samples_leaf: 5
+  - min_samples_split: 10
+  - min_weight_fraction_leaf: 0.0
+  - monotonic_cst: None
+  - n_estimators: 100
+  - n_jobs: -1
+  - oob_score: False
+  - random_state: 42
+  - verbose: 0
+  - warm_start: False
+
+--------------------------------------------------------------------------------
+FEATURE INFORMATION
+--------------------------------------------------------------------------------
+Number of Features: 14
+Number of Target Variables: 72
+Total Training Samples: 8064
+
+Feature Names:
+  1. temp
+  2. humidity
+  3. wind_speed
+  4. wind_deg
+  5. day_of_week
+  6. month
+  7. hour_sin
+  8. hour_cos
+  9. pm25_lag_1hr
+  10. pm25_lag_3hr
+  11. pm25_lag_24hr
+  12. pm25_rolling_avg_6hr
+  13. pm25_rolling_avg_24hr
+  14. temp_wind_interaction
+
+--------------------------------------------------------------------------------
+DATA PREPROCESSING
+--------------------------------------------------------------------------------
+Scaler Type: StandardScaler
+Features Scaled: 14
+
+--------------------------------------------------------------------------------
+MODEL PERFORMANCE METRICS
+--------------------------------------------------------------------------------
+Note: Run the training pipeline to see actual performance metrics.
+Metrics are calculated on the hold-out test set (20% of data).
+
+Expected Metrics Format:
+  - Horizon t+1:  RMSE = [value], MAE = [value]
+  - Horizon t+24: RMSE = [value], MAE = [value]
+  - Horizon t+72: RMSE = [value], MAE = [value]
+
+--------------------------------------------------------------------------------
+USAGE
+--------------------------------------------------------------------------------
+To load this model in Python:
+  import joblib
+  model = joblib.load('models/aqi_model.joblib')
+  scaler = joblib.load('models/scaler.joblib')
+
+To make predictions:
+  X_scaled = scaler.transform(X)
+  predictions = model.predict(X_scaled)
+
+================================================================================
