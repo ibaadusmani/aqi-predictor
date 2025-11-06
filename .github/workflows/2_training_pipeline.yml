@@ -26,7 +26,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run training pipeline
-        run: python src/training_pipeline.py
+        run: python -m src.training_pipeline
 
       - name: Commit and push updated models
         run: |
