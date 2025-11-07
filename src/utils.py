@@ -8,41 +8,51 @@ def create_features(df, is_training=True):
     """
     Create time-series features from a DataFrame.
     """
+    # Create readable timestamp column
     df['timestamp'] = pd.to_datetime(df['dt'], unit='s')
-    df = df.set_index('timestamp')
     
-    df['hour'] = df.index.hour
-    df['day_of_week'] = df.index.dayofweek
-    df['month'] = df.index.month
+    # Set index for time series operations but keep timestamp as column too
+    df_indexed = df.set_index('timestamp')
+    
+    df_indexed['hour'] = df_indexed.index.hour
+    df_indexed['day_of_week'] = df_indexed.index.dayofweek
+    df_indexed['month'] = df_indexed.index.month
 
     # Cyclical features for hour
-    df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
-    df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+    df_indexed['hour_sin'] = np.sin(2 * np.pi * df_indexed['hour'] / 24)
+    df_indexed['hour_cos'] = np.cos(2 * np.pi * df_indexed['hour'] / 24)
 
     # Lag features for pm2.5
-    df['pm25_lag_1hr'] = df['pm2_5'].shift(1)
-    df['pm25_lag_3hr'] = df['pm2_5'].shift(3)
-    df['pm25_lag_24hr'] = df['pm2_5'].shift(24)
+    df_indexed['pm25_lag_1hr'] = df_indexed['pm2_5'].shift(1)
+    df_indexed['pm25_lag_3hr'] = df_indexed['pm2_5'].shift(3)
+    df_indexed['pm25_lag_24hr'] = df_indexed['pm2_5'].shift(24)
 
     # Rolling averages for pm2.5
-    df['pm25_rolling_avg_6hr'] = df['pm2_5'].rolling(window=6).mean()
-    df['pm25_rolling_avg_24hr'] = df['pm2_5'].rolling(window=24).mean()
+    df_indexed['pm25_rolling_avg_6hr'] = df_indexed['pm2_5'].rolling(window=6).mean()
+    df_indexed['pm25_rolling_avg_24hr'] = df_indexed['pm2_5'].rolling(window=24).mean()
 
     # Interaction features
-    df['temp_wind_interaction'] = df['temp'] * df['wind_speed']
+    df_indexed['temp_wind_interaction'] = df_indexed['temp'] * df_indexed['wind_speed']
     
-    # Drop original dt and hour columns
-    df = df.drop(columns=['dt', 'hour'])
+    # Drop only hour column
+    df_indexed = df_indexed.drop(columns=['hour'])
+    
+    # Reset index to get timestamp back as a column
+    df_indexed = df_indexed.reset_index()
+    # Reset index to get timestamp back as a column
+    df_indexed = df_indexed.reset_index()
 
     if is_training:
         # Create target variables
         for i in range(1, 73):
-            df[f'pm25_t+{i}'] = df['pm2_5'].shift(-i)
+            df_indexed[f'pm25_t+{i}'] = df_indexed['pm2_5'].shift(-i)
         
-        # Drop rows with NaNs created by lags/shifts
-        df = df.dropna()
+        # Drop rows with NaN in feature columns (lag/rolling features at the start)
+        # Keep rows with NaN only in target columns (last 72 hours - useful for inference)
+        feature_cols = [col for col in df_indexed.columns if not col.startswith('pm25_t+')]
+        df_indexed = df_indexed.dropna(subset=feature_cols)
 
-    return df
+    return df_indexed
 
 def convert_pm25_to_aqi(pm25):
     """

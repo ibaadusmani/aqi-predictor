@@ -37,8 +37,8 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git add data/processed/features.parquet
+          git add data/processed/features.parquet data/processed/features.csv
           # Commit only if there are changes
-          git diff --staged --quiet || git commit -m "Update features.parquet"
+          git diff --staged --quiet || git commit -m "Update features.parquet and features.csv"
           # Push only if there's a commit to push
           git push || echo "No changes to push"

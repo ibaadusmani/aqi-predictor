@@ -22,14 +22,27 @@ def main():
     # Ensure all target columns exist, in case the feature engineering changed
     target_cols = [col for col in target_cols if col in df.columns]
     
-    feature_cols = [col for col in df.columns if col not in target_cols and col != 'pm2_5']
+    # Exclude non-numeric columns (timestamp, dt) and target columns
+    exclude_cols = target_cols + ['pm2_5', 'timestamp', 'dt']
+    feature_cols = [col for col in df.columns if col not in exclude_cols]
 
     y = df[target_cols]
     X = df[feature_cols]
+    
+    print(f"  Features: {len(feature_cols)} columns")
+    print(f"  Targets: {len(target_cols)} columns")
 
     # 3. Split Data (Time-series split, no shuffle)
     print("Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    # First, remove rows where ALL target columns are NaN (last 72 hours)
+    valid_rows = y.notna().any(axis=1)
+    X_valid = X[valid_rows]
+    y_valid = y[valid_rows]
+    
+    print(f"  Total rows: {len(X)}")
+    print(f"  Valid rows (with at least one target): {len(X_valid)}")
+    
+    X_train, X_test, y_train, y_test = train_test_split(X_valid, y_valid, test_size=0.2, shuffle=False)
 
     # 4. Scale Data
     print("Scaling data...")
@@ -51,20 +64,32 @@ def main():
     print("Evaluating model...")
     y_pred = model.predict(X_test_scaled)
 
-    # Calculate and print metrics for key horizons
-    rmse_t1 = np.sqrt(mean_squared_error(y_test.iloc[:, 0], y_pred[:, 0]))
-    mae_t1 = mean_absolute_error(y_test.iloc[:, 0], y_pred[:, 0])
+    # Remove rows with NaN in targets for evaluation
+    # For each horizon, only evaluate rows that have valid target values
+    def calc_metrics_for_horizon(y_true_col, y_pred_col, horizon_name):
+        """Calculate metrics for a specific horizon, ignoring NaN values."""
+        valid_mask = y_true_col.notna()
+        if valid_mask.sum() == 0:
+            return None, None
+        y_true_valid = y_true_col[valid_mask]
+        y_pred_valid = y_pred_col[valid_mask]
+        rmse = np.sqrt(mean_squared_error(y_true_valid, y_pred_valid))
+        mae = mean_absolute_error(y_true_valid, y_pred_valid)
+        return rmse, mae
     
-    rmse_t24 = np.sqrt(mean_squared_error(y_test.iloc[:, 23], y_pred[:, 23]))
-    mae_t24 = mean_absolute_error(y_test.iloc[:, 23], y_pred[:, 23])
-
-    rmse_t72 = np.sqrt(mean_squared_error(y_test.iloc[:, 71], y_pred[:, 71]))
-    mae_t72 = mean_absolute_error(y_test.iloc[:, 71], y_pred[:, 71])
+    # Calculate and print metrics for key horizons
+    rmse_t1, mae_t1 = calc_metrics_for_horizon(y_test.iloc[:, 0], y_pred[:, 0], "t+1")
+    rmse_t24, mae_t24 = calc_metrics_for_horizon(y_test.iloc[:, 23], y_pred[:, 23], "t+24")
+    rmse_t72, mae_t72 = calc_metrics_for_horizon(y_test.iloc[:, 71], y_pred[:, 71], "t+72")
 
     print("\nModel Evaluation Results:")
-    print(f"  - Horizon t+1:  RMSE = {rmse_t1:.4f}, MAE = {mae_t1:.4f}")
-    print(f"  - Horizon t+24: RMSE = {rmse_t24:.4f}, MAE = {mae_t24:.4f}")
-    print(f"  - Horizon t+72: RMSE = {rmse_t72:.4f}, MAE = {mae_t72:.4f}\n")
+    if rmse_t1:
+        print(f"  - Horizon t+1:  RMSE = {rmse_t1:.4f}, MAE = {mae_t1:.4f}")
+    if rmse_t24:
+        print(f"  - Horizon t+24: RMSE = {rmse_t24:.4f}, MAE = {mae_t24:.4f}")
+    if rmse_t72:
+        print(f"  - Horizon t+72: RMSE = {rmse_t72:.4f}, MAE = {mae_t72:.4f}")
+    print()
 
     # 7. Store Model
     model_path = 'models/aqi_model.joblib'

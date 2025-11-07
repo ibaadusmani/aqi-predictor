@@ -4,7 +4,7 @@ import numpy as np
 import joblib
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.utils import create_features, convert_pm25_to_aqi, ISB_LAT, ISB_LON
 
 # --- Configuration ---
@@ -30,13 +30,16 @@ model, scaler = load_model_and_scaler()
 @st.cache_data(ttl=3600) # Cache for 1 hour
 def fetch_api_data():
     """Fetch all required data from OpenWeatherMap APIs."""
+    # Use UTC time to match API expectations
+    current_utc = datetime.now(timezone.utc)
+    
     # 1. Forecast Data (Next 72 hours)
     pollution_forecast_url = f"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={ISB_LAT}&lon={ISB_LON}&appid={API_KEY}"
     weather_forecast_url = f"http://api.openweathermap.org/data/2.5/forecast/hourly?lat={ISB_LAT}&lon={ISB_LON}&appid={API_KEY}&cnt=72"
     
-    # 2. Historical Data (Last 24 hours for lags)
-    hist_end_ts = int(datetime.now().timestamp())
-    hist_start_ts = int((datetime.now() - timedelta(hours=25)).timestamp())
+    # 2. Historical Data (Last 25 hours for lags)
+    hist_end_ts = int(current_utc.timestamp())
+    hist_start_ts = int((current_utc - timedelta(hours=25)).timestamp())
     
     pollution_history_url = f"http://api.openweathermap.org/data/2.5/air_pollution/history?lat={ISB_LAT}&lon={ISB_LON}&start={hist_start_ts}&end={hist_end_ts}&appid={API_KEY}"
     weather_history_url = f"https://history.openweathermap.org/data/2.5/history/city?lat={ISB_LAT}&lon={ISB_LON}&type=hour&start={hist_start_ts}&end={hist_end_ts}&appid={API_KEY}"
@@ -133,13 +136,16 @@ if model is not None and scaler is not None:
             st.warning("High AQI levels expected in the next 72 hours!")
 
         # Create a DataFrame for plotting (only first 72 hours)
-        future_timestamps = pd.to_datetime(forecast_df['dt'].iloc[:72], unit='s')
+        # Convert UTC timestamps to local time (UTC+5 for Pakistan)
+        future_timestamps_utc = pd.to_datetime(forecast_df['dt'].iloc[:72], unit='s')
+        future_timestamps_local = future_timestamps_utc + timedelta(hours=5)
+        
         plot_df = pd.DataFrame({
-            'Timestamp': future_timestamps,
+            'Timestamp': future_timestamps_local,
             'Predicted AQI': predicted_aqi
         })
 
-        st.subheader("Predicted AQI for the Next 72 Hours")
+        st.subheader("Predicted AQI for the Next 72 Hours (Pakistan Time - UTC+5)")
         st.line_chart(plot_df.set_index('Timestamp'))
 
         with st.expander("View Raw Prediction Data"):
