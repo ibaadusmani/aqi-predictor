@@ -3,7 +3,7 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import numpy as np
 
 def main():
@@ -31,6 +31,20 @@ def main():
     
     print(f"  Features: {len(feature_cols)} columns")
     print(f"  Targets: {len(target_cols)} columns")
+    
+    # Check for data quality issues
+    print("\nData Quality Check:")
+    print(f"  Missing values in features: {X.isnull().sum().sum()}")
+    print(f"  Missing values in targets: {y.isnull().sum().sum()}")
+    print(f"  Feature value ranges:")
+    print(f"    Min: {X.min().min():.2f}")
+    print(f"    Max: {X.max().max():.2f}")
+    print(f"    Mean: {X.mean().mean():.2f}")
+    print(f"  Target (PM2.5) statistics:")
+    print(f"    Min: {y.min().min():.2f} µg/m³")
+    print(f"    Max: {y.max().max():.2f} µg/m³")
+    print(f"    Mean: {y.mean().mean():.2f} µg/m³")
+    print(f"    Std: {y.std().mean():.2f} µg/m³")
 
     # 3. Split Data (Time-series split, no shuffle)
     print("Splitting data...")
@@ -57,38 +71,122 @@ def main():
 
     # 5. Train Model
     print("Training RandomForestRegressor model...")
-    model = RandomForestRegressor(n_estimators=100, n_jobs=-1, random_state=42, max_depth=15, min_samples_leaf=5, min_samples_split=10)
+    print("  Using enhanced hyperparameters for 94 features...")
+    model = RandomForestRegressor(
+        n_estimators=200,           # More trees for better averaging
+        max_depth=25,                # Deeper trees for 94 features
+        min_samples_split=5,         # Less restrictive
+        min_samples_leaf=2,          # Less restrictive
+        max_features='sqrt',         # Good default for many features
+        n_jobs=-1, 
+        random_state=42,
+        verbose=0                    # Suppress progress logs
+    )
     model.fit(X_train_scaled, y_train)
 
     # 6. Evaluate Model
     print("Evaluating model...")
     y_pred = model.predict(X_test_scaled)
 
-    # Remove rows with NaN in targets for evaluation
-    # For each horizon, only evaluate rows that have valid target values
+    # Calculate metrics for specific horizons
     def calc_metrics_for_horizon(y_true_col, y_pred_col, horizon_name):
-        """Calculate metrics for a specific horizon, ignoring NaN values."""
+        """Calculate comprehensive metrics for a specific horizon, ignoring NaN values."""
         valid_mask = y_true_col.notna()
         if valid_mask.sum() == 0:
-            return None, None
+            return None, None, None, None
         y_true_valid = y_true_col[valid_mask]
         y_pred_valid = y_pred_col[valid_mask]
+        
         rmse = np.sqrt(mean_squared_error(y_true_valid, y_pred_valid))
         mae = mean_absolute_error(y_true_valid, y_pred_valid)
-        return rmse, mae
+        r2 = r2_score(y_true_valid, y_pred_valid)
+        
+        # Calculate mean absolute percentage error (MAPE)
+        # Avoid division by zero
+        mape = np.mean(np.abs((y_true_valid - y_pred_valid) / (y_true_valid + 1e-10))) * 100
+        
+        return rmse, mae, r2, mape
     
-    # Calculate and print metrics for key horizons
-    rmse_t1, mae_t1 = calc_metrics_for_horizon(y_test.iloc[:, 0], y_pred[:, 0], "t+1")
-    rmse_t24, mae_t24 = calc_metrics_for_horizon(y_test.iloc[:, 23], y_pred[:, 23], "t+24")
-    rmse_t72, mae_t72 = calc_metrics_for_horizon(y_test.iloc[:, 71], y_pred[:, 71], "t+72")
+    # Calculate metrics for key horizons
+    print("\n" + "="*70)
+    print("MODEL EVALUATION RESULTS")
+    print("="*70)
+    
+    horizons_to_evaluate = [
+        (0, 1, "t+1 (1 hour ahead)"),
+        (5, 6, "t+6 (6 hours ahead)"),
+        (11, 12, "t+12 (12 hours ahead)"),
+        (23, 24, "t+24 (24 hours ahead)"),
+        (47, 48, "t+48 (48 hours ahead)"),
+        (71, 72, "t+72 (72 hours ahead)")
+    ]
+    
+    for idx, horizon_num, horizon_label in horizons_to_evaluate:
+        rmse, mae, r2, mape = calc_metrics_for_horizon(
+            y_test.iloc[:, idx], 
+            y_pred[:, idx], 
+            horizon_label
+        )
+        
+        if rmse is not None:
+            print(f"\n{horizon_label}:")
+            print(f"  RMSE:  {rmse:>8.4f} µg/m³")
+            print(f"  MAE:   {mae:>8.4f} µg/m³")
+            # Suppressing R² score as per the change request
+            # print(f"  R²:    {r2:>8.4f}")
+            print(f"  MAPE:  {mape:>8.2f}%")
+    
+    # Calculate average metrics across all horizons
+    print("\n" + "-"*70)
+    print("AVERAGE METRICS ACROSS ALL HORIZONS")
+    print("-"*70)
+    
+    all_rmse = []
+    all_mae = []
+    all_r2 = []
+    all_mape = []
+    
+    for i in range(72):
+        rmse, mae, r2, mape = calc_metrics_for_horizon(
+            y_test.iloc[:, i], 
+            y_pred[:, i], 
+            f"t+{i+1}"
+        )
+        if rmse is not None:
+            all_rmse.append(rmse)
+            all_mae.append(mae)
+            all_r2.append(r2)
+            all_mape.append(mape)
+    
+    print(f"\nAverage RMSE:  {np.mean(all_rmse):>8.4f} µg/m³")
+    print(f"Average MAE:   {np.mean(all_mae):>8.4f} µg/m³")
+    print(f"Average MAPE:  {np.mean(all_mape):>8.2f}%")
+    
+    print("\n" + "="*70)
+    print()
 
-    print("\nModel Evaluation Results:")
-    if rmse_t1:
-        print(f"  - Horizon t+1:  RMSE = {rmse_t1:.4f}, MAE = {mae_t1:.4f}")
-    if rmse_t24:
-        print(f"  - Horizon t+24: RMSE = {rmse_t24:.4f}, MAE = {mae_t24:.4f}")
-    if rmse_t72:
-        print(f"  - Horizon t+72: RMSE = {rmse_t72:.4f}, MAE = {mae_t72:.4f}")
+    # 6b. Feature Importance Analysis
+    print("Analyzing feature importance...")
+    # Get average importance across all target outputs
+    feature_importances = model.feature_importances_
+    feature_importance_df = pd.DataFrame({
+        'feature': feature_cols,
+        'importance': feature_importances
+    }).sort_values('importance', ascending=False)
+    
+    # Remove printing of most and least important features
+    # print("\nTop 20 Most Important Features:")
+    # print("-" * 50)
+    # for idx, row in feature_importance_df.head(20).iterrows():
+    #     print(f"  {row['feature']:<35} {row['importance']:.4f}")
+    # print("\nBottom 10 Least Important Features:")
+    # print("-" * 50)
+    # for idx, row in feature_importance_df.tail(10).iterrows():
+    #     print(f"  {row['feature']:<35} {row['importance']:.4f}")
+    
+    # Save feature importance
+    feature_importance_df.to_csv('models/feature_importance.csv', index=False)
+    print("\n✓ Feature importance saved to models/feature_importance.csv")
     print()
 
     # 7. Store Model
